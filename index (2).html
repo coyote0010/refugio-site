@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Refúgio da Tia Rê</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { background-color: #fdf6e3; font-family: sans-serif; scroll-behavior: smooth; }
+        .text-orange-custom { color: #d97706; }
+        .bg-green-custom { background-color: #22c55e; }
+        .bg-orange-custom { background-color: #f97316; }
+        .serif { font-family: 'Georgia', serif; }
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 20000;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            color: white;
+        }
+        #donate-modal { display: none; }
+        .field { width: 100%; border: 2px solid #e5e7eb; border-radius: 0.75rem; padding: 0.7rem 0.9rem; font-size: 1rem; outline: none; }
+        .field:focus { border-color: #fb923c; }
+        .field.invalid { border-color: #ef4444; }
+        #qr-box img, #qr-box canvas { margin: 0 auto; max-width: 100%; height: auto; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Loading Overlay -->
+    <div id="loading" class="loading-overlay">
+        <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mb-4"></div>
+        <p class="font-bold">Gerando seu Pix seguro...</p>
+    </div>
+
+    <!-- Modal de Doação (formulário + Pix) -->
+    <div id="donate-modal" class="fixed inset-0 z-[15000] items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border-4 border-orange-400 relative my-auto">
+            <button onclick="closeDonateModal()" class="absolute top-3 right-4 text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none" aria-label="Fechar">&times;</button>
+
+            <!-- Etapa 1: formulário -->
+            <div id="step-form">
+                <h2 class="text-xl font-black text-gray-800 mb-1">Quase lá! 🐾</h2>
+                <p class="text-sm text-gray-600 mb-4">Sua doação de <strong id="donate-amount-label" class="text-orange-custom">R$ 0,00</strong> via Pix. Preencha seus dados para gerar o código.</p>
+
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1" for="f-name">Nome completo</label>
+                        <input id="f-name" class="field" type="text" autocomplete="name" placeholder="Seu nome">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1" for="f-email">E-mail</label>
+                        <input id="f-email" class="field" type="email" autocomplete="email" placeholder="voce@email.com">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1" for="f-phone">Telefone / WhatsApp</label>
+                        <input id="f-phone" class="field" type="tel" inputmode="numeric" autocomplete="tel" placeholder="(11) 99999-9999" maxlength="15">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1" for="f-cpf">CPF</label>
+                        <input id="f-cpf" class="field" type="text" inputmode="numeric" placeholder="000.000.000-00" maxlength="14">
+                    </div>
+                </div>
+
+                <p id="form-error" class="text-sm text-red-600 font-semibold mt-3 hidden"></p>
+
+                <button id="btn-submit" onclick="submitDonation()" class="mt-5 w-full bg-green-custom text-white py-4 rounded-full font-bold uppercase tracking-wide shadow-lg hover:brightness-95 transition-all flex items-center justify-center gap-2 text-lg">
+                    Gerar Pix
+                </button>
+                <p class="text-[11px] text-gray-400 text-center mt-3">Seus dados são usados apenas para gerar o pagamento Pix.</p>
+            </div>
+
+            <!-- Etapa 2: Pix -->
+            <div id="step-pix" class="hidden text-center">
+                <h2 class="text-xl font-black text-gray-800 mb-1">Pix gerado! 💚</h2>
+                <p class="text-sm text-gray-600 mb-4">Abra o app do seu banco, escolha Pix e leia o QR Code ou use o Pix Copia e Cola.</p>
+
+                <div id="qr-box" class="mb-4"></div>
+
+                <div id="copy-area" class="hidden">
+                    <textarea id="pix-code" readonly rows="3" class="w-full text-xs border-2 border-gray-200 rounded-xl p-2 text-gray-600 break-all"></textarea>
+                    <button id="btn-copy" onclick="copyPix()" class="mt-3 w-full bg-orange-custom text-white py-3 rounded-full font-bold uppercase text-sm hover:brightness-95 transition-all">
+                        Copiar código Pix
+                    </button>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-4">Depois de pagar, a confirmação chega por e-mail. Obrigado por ajudar os animais! 🐶🐱</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Exit Intent Modal -->
+    <div id="exit-modal" class="fixed inset-0 z-[10000] hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-white rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border-4 border-orange-400">
+            <div class="bg-orange-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i data-lucide="heart" class="text-orange-600 w-8 h-8 fill-current"></i>
+            </div>
+            <h2 class="text-2xl font-black text-gray-800 mb-2">Espere mais um pouco! 🐾</h2>
+            <p class="text-gray-600 mb-6">Você está a apenas um passo de transformar a vida de um animalzinho. Não vá embora sem ajudar!</p>
+            <button onclick="closeExitModal(); createCheckout(50)" class="w-full bg-green-custom text-white py-4 rounded-full font-bold uppercase tracking-wide shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2 text-lg">
+                <i data-lucide="heart" class="fill-current"></i> Doar Agora
+            </button>
+            <button onclick="closeExitModal()" class="mt-4 text-xs text-gray-400 underline uppercase font-bold">Não posso ajudar agora</button>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="flex justify-between items-center px-4 py-3 bg-white shadow-sm sticky top-0 z-50">
+        <div class="flex items-center gap-2">
+            <img src="https://via.placeholder.com/40" alt="Logo" class="rounded-full">
+            <span class="font-bold text-sm md:text-base">Refúgio da Tia Rê</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <span class="hidden md:block text-xs text-gray-500">Suzano · SP · desde 2011</span>
+            <button onclick="createCheckout(50)" class="bg-green-custom text-white px-3 py-1 rounded text-xs font-bold uppercase">Doar Agora</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-2xl mx-auto px-4 py-8 text-center">
+
+        <h1 class="text-3xl md:text-4xl font-black text-orange-custom mb-8 leading-tight">
+            15 anos. 800 resgates.<br>
+            160 animais hoje.
+        </h1>
+
+        <!-- Video Player Section -->
+        <div class="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl mb-8">
+            <video
+                id="mainVideo"
+                class="w-full h-full object-cover"
+                autoplay
+                muted
+                loop
+                playsinline
+                src="https://drive.google.com/uc?export=download&id=1zvMpdN3NPGJ_Fn2uSvDnmHJsa-epzrUV">
+            </video>
+
+            <!-- Overlay de Som -->
+            <div id="videoOverlay" class="absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-500">
+                <div onclick="toggleMute()" class="bg-orange-100 border-2 border-orange-400 p-4 rounded-lg shadow-lg max-w-[250px] text-center cursor-pointer hover:scale-105 transition-transform">
+                    <p class="text-sm font-bold text-orange-800 mb-2">Seu vídeo já começou</p>
+                    <div class="bg-orange-500 text-white p-3 rounded-full w-12 h-12 mx-auto mb-2 flex items-center justify-center">
+                        <i data-lucide="volume-2"></i>
+                    </div>
+                    <p class="text-xs font-bold text-orange-800 uppercase">Clique para ouvir</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- CTA Principal -->
+        <div class="flex flex-col gap-4 mb-16">
+            <button onclick="createCheckout(50)" class="bg-green-custom text-white py-4 px-8 rounded-full font-bold uppercase tracking-wide shadow-md hover:brightness-95 transition-all flex items-center justify-center gap-2 text-lg mx-auto">
+                <i data-lucide="heart" class="fill-current"></i> Quero ajudar agora
+            </button>
+        </div>
+
+        <!-- SEÇÃO 1: Histórias de Resgate -->
+        <section class="mb-16 text-left">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-3 rounded-xl shadow-sm border border-orange-100">
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <img src="https://via.placeholder.com/300x300" class="rounded-lg w-full h-40 object-cover" alt="Antes">
+                        <img src="https://via.placeholder.com/300x300" class="rounded-lg w-full h-40 object-cover" alt="Depois">
+                    </div>
+                    <p class="text-sm font-medium text-gray-700"><span class="font-bold text-orange-custom">Athena</span> — chegou debilitada, hoje é adotada e cheia de vida.</p>
+                </div>
+                <div class="bg-white p-3 rounded-xl shadow-sm border border-orange-100">
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <img src="https://via.placeholder.com/300x300" class="rounded-lg w-full h-40 object-cover" alt="Antes">
+                        <img src="https://via.placeholder.com/300x300" class="rounded-lg w-full h-40 object-cover" alt="Depois">
+                    </div>
+                    <p class="text-sm font-medium text-gray-700"><span class="font-bold text-orange-custom">Sansão</span> — pata dilacerada, passou por amputação e sobreviveu.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SEÇÃO 2: Valores Sugeridos -->
+        <section class="mb-16 py-8 bg-orange-50 rounded-3xl px-4 border border-orange-100">
+            <span class="text-xs font-bold text-orange-custom uppercase tracking-widest mb-2 block">O que sua doação faz</span>
+            <h2 class="text-2xl font-bold mb-2">Escolha um valor e veja o que ele vira</h2>
+            <p class="text-sm text-gray-600 mb-8">Toque em um valor para doar — ele já entra selecionado.</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <button onclick="createCheckout(25)" class="bg-white p-4 rounded-2xl border-2 border-transparent hover:border-orange-400 transition-all shadow-sm text-left group">
+                    <span class="block font-bold text-lg text-gray-800 group-hover:text-orange-custom">R$ 25</span>
+                    <span class="text-xs text-gray-500">Alimenta 1 animal por uma semana</span>
+                </button>
+                <button onclick="createCheckout(50)" class="bg-white p-4 rounded-2xl border-2 border-orange-400 relative shadow-md text-left group">
+                    <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-orange-400 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Mais Escolhido</span>
+                    <span class="block font-bold text-lg text-gray-800 group-hover:text-orange-custom">R$ 50</span>
+                    <span class="text-xs text-gray-500">Ração e remédios para 2 animais</span>
+                </button>
+                <button onclick="createCheckout(100)" class="bg-white p-4 rounded-2xl border-2 border-transparent hover:border-orange-400 transition-all shadow-sm text-left group">
+                    <span class="block font-bold text-lg text-gray-800 group-hover:text-orange-custom">R$ 100</span>
+                    <span class="text-xs text-gray-500">Compra 1 saco de ração de 10 kg</span>
+                </button>
+                <button onclick="createCheckout(200)" class="bg-white p-4 rounded-2xl border-2 border-transparent hover:border-orange-400 transition-all shadow-sm text-left group">
+                    <span class="block font-bold text-lg text-gray-800 group-hover:text-orange-custom">R$ 200</span>
+                    <span class="text-xs text-gray-500">Vacinas e vermífugos para 4 animais</span>
+                </button>
+                <button onclick="createCheckout(500)" class="bg-white p-4 rounded-2xl border-2 border-transparent hover:border-orange-400 transition-all shadow-sm text-left group">
+                    <span class="block font-bold text-lg text-gray-800 group-hover:text-orange-custom">R$ 500</span>
+                    <span class="text-xs text-gray-500">Tratamento veterinário de 3 animais</span>
+                </button>
+                <button onclick="createCheckout(1000)" class="bg-white p-4 rounded-2xl border-2 border-transparent hover:border-orange-400 transition-all shadow-sm text-left group">
+                    <span class="block font-bold text-lg text-gray-800 group-hover:text-orange-custom">R$ 1.000</span>
+                    <span class="text-xs text-gray-500">Cirurgia de emergência e recuperação</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- SEÇÃO 3: Doação Mensal -->
+        <section class="mb-16 bg-green-800 text-white rounded-3xl overflow-hidden flex flex-col md:flex-row items-center">
+            <div class="p-8 md:w-1/2 text-left">
+                <span class="text-xs font-bold uppercase tracking-widest opacity-80 mb-2 block">Doação Mensal</span>
+                <h2 class="text-2xl font-bold mb-6 leading-tight">Os animais comem <span class="text-green-300">todo dia</span>.<br>As contas chegam <span class="text-green-300">todo mês</span>.</h2>
+                <ul class="space-y-4 mb-8 text-sm opacity-90">
+                    <li class="flex items-start gap-2"><i data-lucide="check-circle-2" class="w-5 h-5 text-green-400 shrink-0"></i><span>R$ 50/mês mantém um animal alimentado e medicado.</span></li>
+                    <li class="flex items-start gap-2"><i data-lucide="check-circle-2" class="w-5 h-5 text-green-400 shrink-0"></i><span>Receba atualizações no WhatsApp.</span></li>
+                </ul>
+                <button onclick="createCheckout(50)" class="bg-white text-green-800 py-3 px-6 rounded-full font-bold uppercase text-sm hover:bg-gray-100 transition-all inline-block">
+                    Quero doar todo mês
+                </button>
+            </div>
+            <div class="md:w-1/2 w-full h-64 md:h-auto">
+                <img src="https://via.placeholder.com/600x600" class="w-full h-full object-cover" alt="Tia Rê">
+            </div>
+        </section>
+
+        <!-- SEÇÃO 4: Transparência -->
+        <section class="mb-16 text-left">
+            <div class="text-center mb-8">
+                <span class="text-xs font-bold text-orange-custom uppercase tracking-widest mb-2 block">Transparência</span>
+                <h2 class="text-3xl font-bold">Para onde vai cada real</h2>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="divide-y divide-gray-100">
+                    <div class="flex justify-between p-4 text-sm"><span>Ração</span><span class="font-semibold">R$ 7.000</span></div>
+                    <div class="flex justify-between p-4 text-sm"><span>Veterinário</span><span class="font-semibold">R$ 45.000</span></div>
+                    <div class="flex justify-between p-4 text-sm"><span>Medicamentos</span><span class="font-semibold">R$ 16.860</span></div>
+                    <div class="flex justify-between p-4 bg-orange-50 text-orange-custom font-bold text-lg"><span>Total Mensal</span><span>R$ 87.360</span></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final CTA -->
+        <div class="mb-16">
+            <button onclick="createCheckout(50)" class="bg-green-custom text-white py-4 px-12 rounded-full font-bold uppercase tracking-wide shadow-lg hover:scale-105 transition-all flex items-center justify-center gap-2 text-xl mx-auto">
+                <i data-lucide="heart" class="fill-current"></i> Doar Agora
+            </button>
+        </div>
+
+    </main>
+
+    <script>
+        lucide.createIcons();
+
+        const API_URL = 'https://api-doacoes-dd1a.onrender.com/checkout';
+        let currentAmount = 0;
+
+        /* ---------- Utilidades ---------- */
+        const $ = (id) => document.getElementById(id);
+        const onlyDigits = (v) => String(v || '').replace(/\D/g, '');
+        const formatBRL = (n) => Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+        function closeExitModal() {
+            $('exit-modal').style.display = 'none';
+        }
+
+        function toggleMute() {
+            const video = $('mainVideo');
+            const overlay = $('videoOverlay');
+            video.muted = false;
+            overlay.style.opacity = '0';
+            setTimeout(() => { overlay.style.display = 'none'; }, 500);
+        }
+
+        document.addEventListener('mouseleave', (e) => {
+            if (e.clientY < 0 && $('donate-modal').style.display !== 'flex') {
+                $('exit-modal').style.display = 'flex';
+            }
+        });
+
+        /* ---------- Máscaras ---------- */
+        $('f-cpf').addEventListener('input', (e) => {
+            let v = onlyDigits(e.target.value).slice(0, 11);
+            v = v.replace(/(\d{3})(\d)/, '$1.$2')
+                 .replace(/(\d{3})(\d)/, '$1.$2')
+                 .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+            e.target.value = v;
+        });
+
+        $('f-phone').addEventListener('input', (e) => {
+            let v = onlyDigits(e.target.value).slice(0, 11);
+            if (v.length > 10) v = v.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+            else if (v.length > 6) v = v.replace(/(\d{2})(\d{4})(\d{0,4})/, '($1) $2-$3');
+            else if (v.length > 2) v = v.replace(/(\d{2})(\d{0,5})/, '($1) $2');
+            e.target.value = v;
+        });
+
+        /* ---------- Validação de CPF ---------- */
+        function isValidCPF(cpf) {
+            cpf = onlyDigits(cpf);
+            if (cpf.length !== 11 || /^(\d)\1{10}$/.test(cpf)) return false;
+            for (let t = 9; t < 11; t++) {
+                let sum = 0;
+                for (let i = 0; i < t; i++) sum += Number(cpf[i]) * (t + 1 - i);
+                const digit = ((sum * 10) % 11) % 10;
+                if (digit !== Number(cpf[t])) return false;
+            }
+            return true;
+        }
+
+        /* ---------- Modal de doação ---------- */
+        // Chamada pelos botões do site: abre o formulário com o valor escolhido
+        function createCheckout(amount) {
+            currentAmount = Number(amount);
+            $('donate-amount-label').textContent = formatBRL(currentAmount);
+            $('step-form').classList.remove('hidden');
+            $('step-pix').classList.add('hidden');
+            showFormError('');
+            $('exit-modal').style.display = 'none';
+            $('donate-modal').style.display = 'flex';
+            setTimeout(() => $('f-name').focus(), 100);
+        }
+
+        function closeDonateModal() {
+            $('donate-modal').style.display = 'none';
+        }
+
+        function showFormError(msg) {
+            const el = $('form-error');
+            if (!msg) { el.classList.add('hidden'); el.textContent = ''; return; }
+            el.textContent = msg;
+            el.classList.remove('hidden');
+        }
+
+        function markInvalid(id, invalid) {
+            $(id).classList.toggle('invalid', invalid);
+        }
+
+        /* ---------- Envio para o servidor ---------- */
+        async function submitDonation() {
+            const name = $('f-name').value.trim();
+            const email = $('f-email').value.trim();
+            const phone = onlyDigits($('f-phone').value);
+            const cpf = onlyDigits($('f-cpf').value);
+
+            const okName = name.split(/\s+/).length >= 2;
+            const okEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+            const okPhone = phone.length >= 10;
+            const okCpf = isValidCPF(cpf);
+
+            markInvalid('f-name', !okName);
+            markInvalid('f-email', !okEmail);
+            markInvalid('f-phone', !okPhone);
+            markInvalid('f-cpf', !okCpf);
+
+            if (!okName) return showFormError('Digite seu nome completo.');
+            if (!okEmail) return showFormError('Digite um e-mail válido.');
+            if (!okPhone) return showFormError('Digite um telefone válido com DDD.');
+            if (!okCpf) return showFormError('CPF inválido. Confira os números.');
+            showFormError('');
+
+            const btn = $('btn-submit');
+            btn.disabled = true;
+            btn.classList.add('opacity-60');
+            $('loading').style.display = 'flex';
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ amount: currentAmount, name, email, phone, cpf })
+                });
+
+                let data = {};
+                try { data = await response.json(); } catch (_) {}
+
+                if (!response.ok) {
+                    console.error('Resposta com erro:', data);
+                    throw new Error(friendlyError(data));
+                }
+
+                console.log('Resposta da API:', data);
+                const found = extractPix(data);
+
+                if (found.pix || found.img) {
+                    showPix(found);
+                } else if (found.url) {
+                    window.location.assign(found.url);
+                } else {
+                    console.error('Não encontrei o código Pix na resposta:', data);
+                    throw new Error('O pagamento foi criado, mas não consegui exibir o Pix. Tente novamente em instantes.');
+                }
+            } catch (error) {
+                console.error('Erro Detalhado:', error);
+                showFormError(error.message || 'Não foi possível gerar o Pix. Tente novamente.');
+            } finally {
+                $('loading').style.display = 'none';
+                btn.disabled = false;
+                btn.classList.remove('opacity-60');
+            }
+        }
+
+        function friendlyError(data) {
+            if (data && data.details) {
+                try {
+                    const parsed = JSON.parse(data.details);
+                    if (parsed.errors && parsed.errors.length) {
+                        return parsed.errors.map(e => e.message).join(' ');
+                    }
+                    if (parsed.message) return parsed.message;
+                } catch (_) {}
+            }
+            return (data && (data.message || data.error)) || 'Não foi possível gerar o Pix. Tente novamente.';
+        }
+
+        /* ---------- Localiza o Pix dentro da resposta (qualquer formato) ---------- */
+        function extractPix(obj) {
+            const out = { pix: null, img: null, url: null };
+
+            (function walk(o, key) {
+                if (o === null || o === undefined) return;
+                if (typeof o === 'string') {
+                    const v = o.trim();
+                    if (!out.pix && /^000201/.test(v)) {
+                        out.pix = v;
+                    } else if (!out.img && /^data:image/.test(v)) {
+                        out.img = v;
+                    } else if (!out.img && /(base64|image|qr)/i.test(key || '') && /^[A-Za-z0-9+/=\s]{200,}$/.test(v)) {
+                        out.img = 'data:image/png;base64,' + v.replace(/\s/g, '');
+                    } else if (!out.img && /^https?:\/\/.+\.(png|jpe?g|svg)(\?.*)?$/i.test(v)) {
+                        out.img = v;
+                    } else if (!out.url && /^https?:\/\//.test(v) && /(checkout|payment|pay).*url|^url$/i.test(key || '')) {
+                        out.url = v;
+                    }
+                } else if (typeof o === 'object') {
+                    Object.keys(o).forEach(k => walk(o[k], k));
+                }
+            })(obj, '');
+
+            return out;
+        }
+
+        /* ---------- Tela do Pix ---------- */
+        function showPix({ pix, img }) {
+            $('step-form').classList.add('hidden');
+            $('step-pix').classList.remove('hidden');
+
+            const box = $('qr-box');
+            box.innerHTML = '';
+
+            if (img) {
+                const el = document.createElement('img');
+                el.src = img;
+                el.alt = 'QR Code Pix';
+                el.style.width = '220px';
+                box.appendChild(el);
+            } else if (pix && window.QRCode) {
+                new QRCode(box, { text: pix, width: 220, height: 220 });
+            }
+
+            if (pix) {
+                $('pix-code').value = pix;
+                $('copy-area').classList.remove('hidden');
+            } else {
+                $('copy-area').classList.add('hidden');
+            }
+        }
+
+        async function copyPix() {
+            const code = $('pix-code').value;
+            const btn = $('btn-copy');
+            try {
+                await navigator.clipboard.writeText(code);
+            } catch (_) {
+                $('pix-code').select();
+                document.execCommand('copy');
+            }
+            btn.textContent = 'Código copiado!';
+            setTimeout(() => { btn.textContent = 'Copiar código Pix'; }, 2500);
+        }
+    </script>
+</body>
+</html>
